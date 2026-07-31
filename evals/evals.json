@@ -1,0 +1,60 @@
+{
+  "skill_name": "auto-evaluation",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "evaluation.xlsx 和 evaluation 图片目录都准备好了，result_0094.jsonl 是待测模型结果。跳过 OCR、五模型解题和共识，只评 high 数据并生成一个新的独立目录和报告。",
+      "expected_output": "触发 evaluate-existing-results，调用 evaluate_existing_results.py，只评分目标模型并输出独立 evaluation.xlsx 和 report.md。",
+      "assertions": [
+        "选择 evaluate_existing_results.py 而不是 run_pipeline.py 的完整 CSV 流程",
+        "要求或识别 xlsx、图片目录和结果 JSONL 三类输入",
+        "只处理 confidence=high 并只评分待测模型"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "对 result_0094.jsonl 和 result_0097.jsonl 两轮现有解题结果分别打分，基于同一个 evaluation.xlsx 和题图，只评 161 个 high，每轮单独出文件夹和报告。",
+      "expected_output": "触发 evaluate-existing-results，一次传入两个 JSONL，生成两个互不覆盖的独立子目录。",
+      "assertions": [
+        "使用 --results-jsonl 一次接收两个结果文件",
+        "每个 JSONL 生成独立目录",
+        "不重复运行 Stage 1-6"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "现有解题集评分里有一条裁判返回了两个 JSON，还有两条空分。只补跑异常题并保证最终所有 high 都有 0-3 分和完整理由。",
+      "expected_output": "使用独立评测的非法响应解析和定向重试能力，不重跑完整流水线。",
+      "assertions": [
+        "多个评分 JSON 采用最后一个完整结果",
+        "只对非法评分做任务级重试",
+        "报告生成前校验所有 high 分数和理由完整"
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "我给你一个图片 URL CSV，从头跑 OCR 切题、五模型解题、共识、待测模型解题、评分和最终报告。",
+      "expected_output": "不触发现有解题集独立模式，使用 run-evaluation 和 run_pipeline.py 完整 8 阶段流程。",
+      "assertions": [
+        "选择 run_pipeline.py --csv",
+        "不要求结果 JSONL",
+        "执行 Stage 1-8"
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "这个 evaluation.xlsx 已经有 AI/AJ 评分了，不要重新打分，只按当前模板重新生成 report.md。",
+      "expected_output": "不触发现有解题集独立评分，使用 generate-report 或 Stage 8。",
+      "assertions": [
+        "只执行 Stage 8",
+        "不调用评分接口",
+        "不要求结果 JSONL 或图片目录"
+      ],
+      "files": []
+    }
+  ]
+}

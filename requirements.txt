@@ -1,0 +1,7 @@
+requests
+pillow
+openpyxl
+pandas
+pycryptodome
+bce-python-sdk
+PyYAML
