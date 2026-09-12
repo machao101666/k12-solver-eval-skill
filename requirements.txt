@@ -4,4 +4,3 @@ openpyxl
 pandas
 pycryptodome
 bce-python-sdk
-PyYAML

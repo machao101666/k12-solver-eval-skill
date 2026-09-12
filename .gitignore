@@ -1,35 +1,9 @@
-# 凭证与本地配置（绝对不要提交）
+# 凭证文件：切勿提交或外传
 .env
-.env.local
-*.env
-!.env.example
-
-# 评测产物
-runs/
-reports/
-logs/
-image/
-image_ocr/
-image_ocr_clean/
-*.xlsx.tmp.xlsx
-*.lock
-.existing_eval.lock
-
-# 评测输出目录（evaluate_existing_results 生成）
-evaluation_result_*/
 
 # Python
 __pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+*.pyc
 
-# 编辑器与系统
+# macOS
 .DS_Store
-.idea/
-.vscode/
-*.swp

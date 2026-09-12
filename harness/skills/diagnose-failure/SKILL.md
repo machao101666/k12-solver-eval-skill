@@ -1,6 +1,6 @@
 ---
 name: diagnose-failure
-description: 根据 run.json、结构化日志和 Excel 列定位 OCR、BOS、待测模型、评分或报告失败原因。
+description: 根据 run.json、结构化日志和 Excel 列定位 OCR、BOS、小度、评分或报告失败原因。
 ---
 
 # Diagnose Failure
@@ -16,12 +16,11 @@ description: 根据 run.json、结构化日志和 Excel 列定位 OCR、BOS、�
 3. `runs/run_xxx/logs/metadata.json` 和 `logs/stages/*.json`：定位阶段内错误。
 4. `runs/run_xxx/evaluation.xlsx`：检查关键列是否满足阶段依赖。
 5. 必要时检查图片目录、BOS URL 可访问性和接口返回。
-6. 怀疑配置或凭证问题时执行 `python3 config.py` 做配置自检。
 
 ## Playbooks
 
 - OCR：`harness/references/playbooks/diagnose-ocr-error.md`
-- 待测模型：`harness/references/playbooks/diagnose-target-model-error.md`
+- 小度：`harness/references/playbooks/diagnose-xiaodu-error.md`
 - 续跑：`harness/references/playbooks/retry-failed-stage.md`
 
 ## 输出

@@ -36,13 +36,13 @@ python3 evaluate_existing_results.py \
 ## 默认行为
 
 - `--resume-run` 只请求 AI/AJ 分数非法或理由为空的 high 行，已有合法评分不重复调用。
-- 只处理 `confidence=high`，不把 medium/low 加入评测分母；置信度口径由 `config.yaml` 的 `evaluation.only_confidence` 配置。
+- 只处理 `confidence=high`，不把 medium/low 加入评测分母。
 - 按图片路径映射，不依赖 JSONL 行号或 Excel 行号相同。
 - 每个 JSONL 生成独立子目录，互不覆盖。
 - 只评待测模型，Stage 7 使用 `--targets target`，不重复评分五参考模型。
-- 3 分格式只认可按顺序、原样出现 `==**解题过程**==` 和 `==**最终答案**==`（见 `evaluation.required_output_headings`）。
+- 3 分格式只认可按顺序、原样出现 `==**解题过程**==` 和 `==**最终答案**==`。
 - 裁判返回多个 JSON 时取最后一个完整评分；非法评分自动定向重试。
-- 全部 high 行必须得到合法 0-3 分和非空理由后才生成报告。
+- 161 条 high 必须得到 161 条合法 0-3 分和非空理由后才生成报告。
 - 不修改源 Excel、源 JSONL 和源图片。
 
 ## 输出

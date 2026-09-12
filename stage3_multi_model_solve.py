@@ -16,10 +16,10 @@ import requests
 import openpyxl
 
 from logger import get_logger
-from config import cfg, prompt, soft_secret, require_secrets
+import config
 
 # 并发控制
-API_SEMAPHORE = threading.Semaphore(int(cfg('runtime.solve_concurrency', 20)))
+API_SEMAPHORE = threading.Semaphore(20)   # 同时最多 20 个 API 请求（最大并发）
 RATE_LIMIT_LOCK = threading.Lock()      # 限流等待锁
 _rate_limit_until = 0                   # 限流恢复时间戳
 
@@ -35,24 +35,21 @@ def wait_if_rate_limited():
 EXCEL_LOCK = threading.Lock()            # Excel 写入锁
 
 # ============================================
-# 配置：全部来自 config.yaml / .env，见 config.py
+# 配置
 # ============================================
-API_URL = cfg('providers.qianfan.base_url')
-_QIANFAN_KEY = soft_secret('providers.qianfan.api_key')
-API_KEY = _QIANFAN_KEY if _QIANFAN_KEY.startswith('Bearer ') else f'Bearer {_QIANFAN_KEY}'
+API_URL = config.get('QIANFAN_API_URL', 'https://qianfan.baidubce.com/v2/chat/completions')
+# 千帆 Bearer Token（从环境变量 / .env 读取，源码不含真实密钥）
+API_KEY = f"Bearer {config.require('QIANFAN_API_TOKEN', '千帆五模型解题')}"
 
-# OpenAI 兼容聚合网关（doubao / claude / gemini 等走这里）
-COMPAT_URL = cfg('providers.openai_compat.base_url', '') or ''
-# Anthropic 原生 /v1/messages 端点；未配置时由 base_url 自动推导
-COMPAT_MESSAGES_URL = cfg('providers.openai_compat.messages_url', None) \
-    or COMPAT_URL.replace('/chat/completions', '/messages')
-COMPAT_KEY = soft_secret('providers.openai_compat.api_key')
-COMPAT_HEADERS = {
+# Claude API (华研) - 已弃用，改用 OpenAI 兼容格式；如需启用请配置 HUAYAN_API_KEY
+HUAYAN_URL = config.get('HUAYAN_API_URL', 'https://www.huayanapi.com/v1/chat/completions')
+HUAYAN_KEY = config.get('HUAYAN_API_KEY', '')
+HUAYAN_HEADERS = {
     'Content-Type': 'application/json',
-    'Authorization': f'Bearer {COMPAT_KEY}',
+    'Authorization': f'Bearer {HUAYAN_KEY}',
 }
 
-EXCEL_FILE = cfg('paths.excel_file', 'evaluation.xlsx')
+EXCEL_FILE = 'evaluation.xlsx'
 BASE_DIR = os.environ.get("AUTO_EVAL_WORK_DIR") or os.path.dirname(os.path.abspath(__file__))
 
 HEADERS = {
@@ -60,32 +57,139 @@ HEADERS = {
     'Authorization': API_KEY,
 }
 
-# 提示词模板（外置到 prompts/，见 prompts/README.md）
-PROMPT_TEMPLATE = prompt('solve')
+# 提示词模板
+PROMPT_TEMPLATE = """你是严格遵循K12课标、输出格式高度标准化的校内作业解题助手，作答严格遵守全部规则，严格模仿示例的写实写法、分步逻辑、句式风格，禁止使用模板化空话、套话、泛泛概括式表述，必须写实、具体、有实际内容。
 
-# 参考模型配置：全部来自 config.yaml 的 models.reference_models。
-# 想换模型集合或调整写回列，改 config.yaml，不用动代码。
-def _build_models():
-    models = []
-    for item in cfg('models.reference_models'):
-        columns = item.get('excel_columns', {})
-        provider_name = item.get('provider', 'qianfan')
-        models.append({
-            'label': item['label'],
-            'model': item['model'],
-            'provider': provider_name,
-            'api_style': item.get('api_style') or ('qianfan' if provider_name == 'qianfan' else 'openai_compat'),
-            'temperature': item.get('temperature'),
-            'enable_thinking': item.get('enable_thinking', True),
-            'col_time': int(columns['time']),
-            'col_model': int(columns['model']),
-            'col_reasoning': int(columns['reasoning']),
-            'col_answer': int(columns['answer']),
-        })
-    return models
+一、基础作答约束（核心干扰项过滤规则，优先级最高）
+1.  执行顺序：先过滤所有干扰信息，再识别纯题干，最后独立解题。
+2.  干扰项定义：图片中出现的**任何手写笔迹、学生作答痕迹、学生写的答案（无论对错）、印刷参考答案、已写的解题步骤、草稿、涂改痕迹、标注、打勾/打叉符号**，全部视为无效干扰信息，**必须100%忽略，不得读取、参考、使用**。
+3.  解题依据：仅以图片内**题干原题**为唯一依据，完全独立解题，不判断、不评价、不修改图片中已有的任何作答内容。
+4.  输出要求：不闲聊、不复述任何题干、不做教学点评、不拓展课外知识点，只输出标准解题过程与最终结论，禁止在输出中提及“图片中的答案”“手写痕迹”等干扰信息。
 
+二、学段防超纲强约束
+本题所属学段：{学段}
+必须严格遵循{学段}教学大纲，只使用本学段课本常规解法、标准术语；
+禁止使用高年级知识、超纲公式、竞赛解法、偏门技巧，只用校内课堂标准基础解法。
 
-MODELS = _build_models()
+三、学科与题型约束
+本题所属学科：{学科}
+本题所属题型：{题型}
+严格按本学科本题型标准答题规范、步骤格式、作答详略程度书写，不凑字数、不写无意义套话，不用“应该”“可能”等话术，要用确定性的语言回答。
+
+四、固定强制输出格式（固定标签，便于代码精准提取）
+必须严格使用固定标识开头，标识文字不许改、不许加符号、不许换行乱排：
+Reasoning：
+书写完整分步推理、演算、证明、分析过程，每一步都要有实际内容，禁止只写"梳理要点、分维度概括"这类空泛话术。
+
+Answer：
+1. 计算、选择、填空、简答类有明确结果的题目：给出**具体数值、选项、完整明确结论**，不模糊、不笼统、不敷衍。
+2. 数学证明题、几何推导、语文纯分析说理题等无独立单句答案的题型：
+Answer 统一固定只写：该命题成立，不空白、不自行编造多余内容。
+3.如果一个图片有多个小题，直接输出每个小题的答案，中间用空格间隔，无需写各个小题的题号序号，禁止输出其他任何题干、过程等内容
+
+五、数学格式规范
+所有算式、方程、几何表达式统一用标准LaTeX格式包裹。
+
+六、写实标准示例（严格模仿这种写实写法，禁止模板化空话）
+【示例1 数学计算题-解方程】
+Reasoning：
+1. 把常数项移到等式右侧：$3x = 15 - 6$
+2. 计算右侧结果：$3x = 9$
+3. 两边同除以3，求得未知数：$x = 3$
+Answer：$x=3$
+
+【示例2 语文阅读理解简答-人物形象】
+Reasoning：
+1. 从文中主动帮老人干活、遇事懂得谦让的行为事件切入；
+2. 结合人物语言和心理描写，提炼性格品质；
+3. 整合具体情节对应的性格特点，逐条凝练表述。
+Answer：文中少年孝顺懂事、善良热心、谦逊有礼，做事踏实稳重，懂得体谅长辈。
+
+【示例3 英语阅读简答-原因类】
+Reasoning：
+1. 定位原文第二段对应语句，抓取人物行为动机；
+2. 筛选原文关键信息，用初中标准简单句式整合；
+3. 保证语法正确、句意完整，不额外主观臆测。
+Answer：He likes summer because he can swim and spend time with his parents on holiday.
+
+【示例4 数学几何证明题】
+Reasoning：
+1. 由题意可知AB平行于CD，可得内错角相等；
+2. 结合已知边相等条件，套用三角形全等判定SAS；
+3. 逐层推导对应边、对应角相等，完成完整逻辑证明。
+Answer：该命题成立
+
+七、客观题作答规则
+选择、填空、计算、竖式、脱式、解方程、解析几何等：
+步骤写实分步书写，每一步都有实际运算或推导内容；
+Answer 给出确切数值、选项、结果，不用模糊概括；如果有多个题目答案，用空格分割即可，禁止输出题号序号等无关内容。
+
+八、开放题作答强约束（防泛泛而谈）
+语文阅读简答、赏析、感悟、英语简答类：
+禁止写"从多维度、从主旨角度、概括大意"这类模板空话；
+必须结合题目场景写实分析、具体表述，要点明确、语句落地；
+同题只允许少量措辞差异，核心要点、结论保持一致，便于后续语义比对。
+
+九、异常兜底规则
+若图片模糊、题干残缺、无法识别完整题目，仅固定输出一句话：无法正常解题
+"""
+
+# 五个模型配置
+MODELS = [
+    {
+        'label': '模型1(ernie)',
+        'model': 'ernie-5.0-thinking-latest',
+        'temperature': 0.1,
+        'enable_thinking': True,
+        'col_model': 7,  # G
+        'col_reasoning': 8,  # H
+        'col_answer': 9,  # I
+        'col_time': 6,  # F
+    },
+    {
+        'label': '模型2(doubao)',
+        'model': 'doubao-seed-2-0-pro-260215',
+        'provider': 'huayan',
+        'temperature': 0.1,
+        'enable_thinking': True,
+        'col_model': 11,  # K
+        'col_reasoning': 12,  # L
+        'col_answer': 13,  # M
+        'col_time': 10,  # J
+    },
+    {
+        'label': '模型3(qwen)',
+        'model': 'qwen3-vl-235b-a22b-thinking',
+        'temperature': 0.1,
+        'enable_thinking': True,
+        'col_model': 15,  # O
+        'col_reasoning': 16,  # P
+        'col_answer': 17,  # Q
+        'col_time': 14,  # N
+    },
+    {
+        'label': '模型4(claude)',
+        'model': 'anthropic/claude-opus-4-8',
+        'provider': 'claude',
+        'temperature': None,
+        'enable_thinking': True,
+        'col_model': 19,  # S
+        'col_reasoning': 20,  # T
+        'col_answer': 21,  # U
+        'col_time': 18,  # R
+    },
+    {
+        'label': '模型5(gemini)',
+        'model': 'gemini-3.1-pro-preview',
+        'provider': 'huayan',
+        'temperature': 0.1,
+        'enable_thinking': True,
+        'col_model': 23,  # W
+        'col_reasoning': 24,  # X
+        'col_answer': 25,  # Y
+        'col_time': 22,  # V
+    },
+]
 
 
 def image_to_base64_data_url(image_path):
@@ -271,7 +375,7 @@ def call_model(model_config, image_data_url, prompt_text, max_retries=1):
     return model_name, f'{last_error}（已重试{max_retries}次，跳过）', ''
 
 
-def call_openai_compat_model(model_config, image_data_url, prompt_text, max_retries=1):
+def call_huayan_model(model_config, image_data_url, prompt_text, max_retries=1):
     """
     调用华研 API (OpenAI 兼容格式)，单次限时 200s，最多重试 max_retries 次
     返回 (model_name, reasoning, answer)
@@ -308,8 +412,8 @@ def call_openai_compat_model(model_config, image_data_url, prompt_text, max_retr
     for attempt in range(1, max_retries + 2):
         try:
             response = requests.post(
-                COMPAT_URL,
-                headers=COMPAT_HEADERS,
+                HUAYAN_URL,
+                headers=HUAYAN_HEADERS,
                 data=json.dumps(payload),
                 timeout=200,
             )
@@ -373,7 +477,7 @@ def call_openai_compat_model(model_config, image_data_url, prompt_text, max_retr
 
 def call_claude_model(model_config, image_path, prompt_text, max_retries=1):
     """
-    调用 Anthropic 原生 /v1/messages 格式接口（端点见 providers.openai_compat.messages_url）
+    调用 Claude API (Anthropic 原生格式 /v1/messages)，单次限时 200s
     返回 (model_name, reasoning, answer)
     """
     model_name = model_config['model']
@@ -399,7 +503,7 @@ def call_claude_model(model_config, image_path, prompt_text, max_retries=1):
 
     claude_headers = {
         'Content-Type': 'application/json',
-        'x-api-key': COMPAT_KEY,
+        'x-api-key': HUAYAN_KEY,
         'anthropic-version': '2023-06-01',
     }
 
@@ -407,7 +511,7 @@ def call_claude_model(model_config, image_path, prompt_text, max_retries=1):
     for attempt in range(1, max_retries + 2):
         try:
             response = requests.post(
-                COMPAT_MESSAGES_URL,
+                'https://www.huayanapi.com/v1/messages',
                 headers=claude_headers,
                 data=json.dumps(payload),
                 timeout=200,
@@ -473,14 +577,11 @@ def call_claude_model(model_config, image_path, prompt_text, max_retries=1):
 
 
 def dispatch_call(model_config, image_data_url, image_full_path, prompt_text):
-    """根据 api_style 分发到不同的 API 调用函数"""
-    api_style = model_config.get('api_style') or (
-        'qianfan' if model_config.get('provider', 'qianfan') == 'qianfan' else 'openai_compat'
-    )
-    if api_style == 'claude':
+    """根据 provider 分发到不同的 API 调用函数"""
+    if model_config.get('provider') == 'claude':
         return call_claude_model(model_config, image_full_path, prompt_text)
-    elif api_style == 'openai_compat':
-        return call_openai_compat_model(model_config, image_data_url, prompt_text)
+    elif model_config.get('provider') == 'huayan':
+        return call_huayan_model(model_config, image_data_url, prompt_text)
     else:
         return call_model(model_config, image_data_url, prompt_text)
 
@@ -493,11 +594,6 @@ def parse_args():
 
 def process_excel(work_dir=None):
     """主流程：读取 evaluation.xlsx，并发处理（5模型各自独立流水线，全局并发受限）"""
-    require_secrets(*sorted({
-        f"providers.{model.get('provider', 'qianfan')}.{field}"
-        for model in MODELS
-        for field in ('base_url', 'api_key')
-    }))
     base_dir = os.path.abspath(work_dir or BASE_DIR)
     os.environ["AUTO_EVAL_WORK_DIR"] = base_dir
     logger = get_logger(base_dir=base_dir)

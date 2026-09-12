@@ -18,20 +18,17 @@ from pathlib import Path
 import openpyxl
 
 import stage7_score_judge
-from config import cfg, column
 
 
 BASE_DIR = Path(__file__).resolve().parent
-# 列映射来自 config.yaml 的 excel.columns
-COL_IMAGE_PATH = column('image_path')
-COL_CONFIDENCE = column('confidence')
-COL_PSEUDO_LABEL = column('pseudo_label')
-COL_MODEL_OUTPUT = column('model_output')
-COL_TIME = column('model_time')
-COL_STATUS = column('model_status')
-COL_SCORE = column('target_score')
-COL_REASON = column('target_reason')
-ONLY_CONFIDENCE = str(cfg('evaluation.only_confidence', 'high')).strip().lower()
+COL_IMAGE_PATH = 2
+COL_CONFIDENCE = 26
+COL_PSEUDO_LABEL = 29
+COL_MODEL_OUTPUT = 32
+COL_TIME = 33
+COL_STATUS = 34
+COL_SCORE = 35
+COL_REASON = 36
 
 
 class RunLock:
@@ -78,7 +75,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--concurrency", type=int, default=8, help="评分并发数，默认 8")
     parser.add_argument("--invalid-retries", type=int, default=2, help="非法裁判响应额外重试次数，默认 2")
     parser.add_argument("--report-title", help="单个 JSONL 时可指定报告标题")
-    parser.add_argument("--cross-model-xlsx", dest="cross_model_xlsx", help="Stage 8 横向评分表的来源 Excel，可选；未指定时用本次评测 Excel")
+    parser.add_argument("--xiaodu-xlsx", help="Stage 8 固定横向表所需的小度基线 Excel，可选")
     parser.add_argument("--prepare-only", action="store_true", help="只准备独立数据目录，不调用评分接口和报告")
     return parser.parse_args()
 
@@ -181,7 +178,7 @@ def validate_source_workbook(xlsx_path: Path) -> int:
             if confidence_cell.data_type == "f":
                 raise ValueError(f"Excel 第 {row} 行 confidence 是公式；请先固化为 high/medium/low 文本")
             confidence = str(confidence_cell.value or "").strip().lower()
-            if confidence != ONLY_CONFIDENCE:
+            if confidence != "high":
                 continue
             high_rows += 1
             if not ws.cell(row, COL_IMAGE_PATH).value:
@@ -210,7 +207,7 @@ def prepare_run(
         if confidence_cell.data_type == "f":
             raise ValueError(f"Excel 第 {row} 行 confidence 是公式；请先固化为 high/medium/low 文本")
         confidence = str(confidence_cell.value or "").strip().lower()
-        if confidence != ONLY_CONFIDENCE:
+        if confidence != "high":
             ws.delete_rows(row, 1)
 
     selected_raw_lines = []
@@ -292,7 +289,7 @@ def validate_scores(run_dir: Path, expected: int) -> dict[int, int]:
     return distribution
 
 
-def generate_report(run_dir: Path, title: str, cross_model_xlsx: Path | None) -> None:
+def generate_report(run_dir: Path, title: str, xiaodu_xlsx: Path | None) -> None:
     command = [
         sys.executable,
         str(BASE_DIR / "stage8_generate_report.py"),
@@ -304,8 +301,8 @@ def generate_report(run_dir: Path, title: str, cross_model_xlsx: Path | None) ->
         "--title",
         title,
     ]
-    if cross_model_xlsx:
-        command.extend(["--cross-model-xlsx", str(cross_model_xlsx)])
+    if xiaodu_xlsx:
+        command.extend(["--xiaodu-xlsx", str(xiaodu_xlsx)])
     subprocess.run(command, cwd=BASE_DIR, check=True)
 
 
@@ -323,9 +320,9 @@ def update_run_metadata(run_dir: Path, **values) -> None:
 
 def main() -> int:
     args = parse_args()
-    cross_model_xlsx = resolve_path(args.cross_model_xlsx) if args.cross_model_xlsx else None
-    if cross_model_xlsx and not cross_model_xlsx.is_file():
-        raise SystemExit(f"横向评分来源 Excel 不存在: {cross_model_xlsx}")
+    xiaodu_xlsx = resolve_path(args.xiaodu_xlsx) if args.xiaodu_xlsx else None
+    if xiaodu_xlsx and not xiaodu_xlsx.is_file():
+        raise SystemExit(f"小度基线 Excel 不存在: {xiaodu_xlsx}")
 
     if args.resume_run:
         if args.prepare_only:
@@ -355,7 +352,7 @@ def main() -> int:
             )
             distribution = validate_scores(run_dir, high_count)
             title = args.report_title or f"{run_dir.name} 高置信度{high_count}题评测报告"
-            generate_report(run_dir, title, cross_model_xlsx)
+            generate_report(run_dir, title, xiaodu_xlsx)
             update_run_metadata(run_dir, status="success", score_distribution=distribution)
         summary = {
             "run_dir": str(run_dir),
@@ -410,7 +407,7 @@ def main() -> int:
             )
             distribution = validate_scores(run_dir, high_count)
             title = args.report_title if args.report_title and len(result_paths) == 1 else f"{result_path.stem} 高置信度{high_count}题评测报告"
-            generate_report(run_dir, title, cross_model_xlsx)
+            generate_report(run_dir, title, xiaodu_xlsx)
             update_run_metadata(run_dir, status="success", score_distribution=distribution)
         summaries.append({
             "run_dir": str(run_dir),

@@ -31,19 +31,11 @@ import traceback
 from datetime import datetime
 
 # ============================================
-# 全局配置：来自 config.yaml，见 config.py
-# logger 被所有阶段导入，因此这里对配置缺失做兜底，不抛异常。
+# 全局配置
 # ============================================
-try:
-    from config import cfg as _cfg
-
-    LOG_DIR_NAME = _cfg("paths.log_dir", "logs")
-    MAX_MESSAGE_LENGTH = int(_cfg("logging.max_message_length", 2000))
-    MAX_API_LOG_LENGTH = int(_cfg("logging.max_api_log_length", 800))
-except Exception:  # 配置不可用时退回默认值，保证日志始终可写
-    LOG_DIR_NAME = "logs"
-    MAX_MESSAGE_LENGTH = 2000   # 单条日志截断长度
-    MAX_API_LOG_LENGTH = 800    # API prompt/response 截断长度
+LOG_DIR_NAME = "logs"
+MAX_MESSAGE_LENGTH = 2000   # 单条日志截断长度
+MAX_API_LOG_LENGTH = 800    # API prompt/response 截断长度
 
 
 # ============================================

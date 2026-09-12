@@ -18,6 +18,6 @@ description: 分析 evaluation.xlsx、report.md 或 run 产物中的评测结果
 
 ## 分析边界
 
-- 待测模型评分 AI/AJ 与五参考模型评分 AK-AT 分开解释。
-- 不把非 `confidence=high` 行纳入待测模型评分口径（置信度口径见 `config.yaml` 的 `evaluation.only_confidence`）。
+- 小度评分 AI/AJ 与五参考模型评分 AK-AT 分开解释。
+- 不把非 `confidence=high` 行纳入小度评分口径。
 - 不更改评分规则，只解释当前结果。

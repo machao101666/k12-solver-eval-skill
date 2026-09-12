@@ -1,0 +1,21 @@
+{
+  "name": "score",
+  "desc": "专业评分裁判（C模块）",
+  "order": "07",
+  "status": "success",
+  "started_at": "2026-09-07T19:52:09.947167",
+  "progress": {
+    "current": 0,
+    "total": 0
+  },
+  "files_in": [
+    "/Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/auto-evaluation-skill（amu评测）/runs/existing_eval_oneapi_opus5_rep1_20260907/result_rep1_high_161/evaluation.xlsx"
+  ],
+  "files_out": [
+    "/Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/auto-evaluation-skill（amu评测）/runs/existing_eval_oneapi_opus5_rep1_20260907/result_rep1_high_161/evaluation.xlsx"
+  ],
+  "api_calls": [],
+  "errors": [],
+  "rows": 0,
+  "ended_at": "2026-09-07T20:00:08.473169"
+}

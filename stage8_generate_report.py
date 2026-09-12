@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import math
 import os
+import statistics
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -22,63 +23,24 @@ try:
 except ImportError as exc:
     raise SystemExit("缺少依赖 pandas，请先执行：pip3 install pandas openpyxl") from exc
 
-from config import cfg
-
 
 BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_INPUT = BASE_DIR / cfg("paths.excel_file", "evaluation.xlsx")
+DEFAULT_INPUT = BASE_DIR / "evaluation.xlsx"
 DEFAULT_REPORT_DIR = BASE_DIR / "reports"
 
 GRADE_ORDER = ["小学", "初中", "高中"]
 SUBJECT_ORDER = ["语文", "数学", "英语"]
 SCORE_LABELS = [0, 1, 2, 3]
-PASS_SCORE = int(cfg("evaluation.pass_score", 2))
-ONLY_CONFIDENCE = str(cfg("evaluation.only_confidence", "high")).strip().lower()
 
-# 待测模型评分列的候选表头。stage7 写入的表头随版本变化，这里全部兼容。
-TARGET_MODEL_LABEL = "M0(待测模型)"
-TARGET_SCORE_COLS = ["target_score_0_3", "score_0_3"]
+MODEL_SPECS = [
+    {"name": "M1(ernie)", "time_col": "time1", "answer_col": "answer", "score_cols": ["ernie_score_0_3", "ernire_score_0_3"], "reason_cols": ["ernie_judge_reason", "judge_reason.1"], "ref_keys": ["ernie", "ernire"]},
+    {"name": "M2(doubao)", "time_col": "time2", "answer_col": "answer.1", "score_cols": ["doubao_score_0_3"], "reason_cols": ["doubao_judge_reason", "judge_reason.2"], "ref_keys": ["doubao", "seed"]},
+    {"name": "M3(qwen)", "time_col": "time3", "answer_col": "answer.2", "score_cols": ["qwen_score_0_3"], "reason_cols": ["qwen_judge_reason", "judge_reason.3"], "ref_keys": ["qwen"]},
+    {"name": "M4(claude)", "time_col": "time4", "answer_col": "answer.3", "score_cols": ["claude_score_0_3"], "reason_cols": ["claude_judge_reason", "judge_reason.4"], "ref_keys": ["claude"]},
+    {"name": "M5(gemini)", "time_col": "time5", "answer_col": "answer.4", "score_cols": ["gemini_score_0_3"], "reason_cols": ["gemini_judge_reason", "judge_reason.5"], "ref_keys": ["gemini"]},
+]
 
-
-def _build_model_specs() -> list[dict[str, Any]]:
-    """参考模型在报告中的列映射。
-
-    pandas 读 Excel 时重复表头会自动加 .1/.2 后缀，因此这里用「候选表头列表」
-    做兼容匹配：既支持 config.yaml 里配置的标签，也保留历史表头别名。
-    """
-    legacy = [
-        {"score": ["ernie_score_0_3", "ernire_score_0_3"], "ref_keys": ["ernie", "ernire"]},
-        {"score": ["doubao_score_0_3"], "ref_keys": ["doubao", "seed"]},
-        {"score": ["qwen_score_0_3"], "ref_keys": ["qwen"]},
-        {"score": ["claude_score_0_3"], "ref_keys": ["claude"]},
-        {"score": ["gemini_score_0_3"], "ref_keys": ["gemini"]},
-    ]
-    ref_models = cfg("models.reference_models", [])
-    score_columns = cfg("excel.reference_score_columns", [])
-    specs: list[dict[str, Any]] = []
-    for index in range(max(len(ref_models), len(legacy))):
-        legacy_item = legacy[index] if index < len(legacy) else {"score": [], "ref_keys": []}
-        name = ref_models[index]["label"] if index < len(ref_models) else f"M{index + 1}"
-        key = None
-        if index < len(score_columns):
-            key = score_columns[index].get("label")
-        score_cols = ([f"{key}_score_0_3"] if key else []) + legacy_item["score"]
-        reason_cols = ([f"{key}_judge_reason"] if key else []) + [
-            f"{legacy_item['ref_keys'][0]}_judge_reason" if legacy_item["ref_keys"] else "",
-            f"judge_reason.{index + 1}",
-        ]
-        specs.append({
-            "name": name,
-            "time_col": f"time{index + 1}",
-            "answer_col": "answer" if index == 0 else f"answer.{index}",
-            "score_cols": [col for col in dict.fromkeys(score_cols) if col],
-            "reason_cols": [col for col in dict.fromkeys(reason_cols) if col],
-            "ref_keys": list(dict.fromkeys(([key.lower()] if key else []) + legacy_item["ref_keys"])),
-        })
-    return specs
-
-
-MODEL_SPECS = _build_model_specs()
+XIAODU_SCORE_COLS = ["小度_score_0_3", "score_0_3"]
 
 
 def value_exists(value: Any) -> bool:
@@ -215,7 +177,7 @@ def subject_grade_sample_table(df: pd.DataFrame) -> str:
 
 def model_success_table(df: pd.DataFrame) -> str:
     rows = []
-    high_mask = df["confidence"].astype(str).str.lower().str.strip() == ONLY_CONFIDENCE if "confidence" in df.columns else pd.Series([True] * len(df), index=df.index)
+    high_mask = df["confidence"].astype(str).str.lower().str.strip() == "high" if "confidence" in df.columns else pd.Series([True] * len(df), index=df.index)
     for spec in MODEL_SPECS:
         answer_col = spec["answer_col"]
         time_col = spec["time_col"]
@@ -290,7 +252,7 @@ def qtype_score_tables(scored: pd.DataFrame) -> str:
 
 
 def tested_model_time_table(scored: pd.DataFrame) -> str:
-    time_col = first_existing_col(scored, ["time", "target_time"])
+    time_col = first_existing_col(scored, ["time", "小度_time", "xiaodu_time"])
     if not time_col:
         return "未找到待测模型 time 列。"
     times = pd.to_numeric(scored[time_col], errors="coerce").dropna()
@@ -327,37 +289,66 @@ def score_detail_table(scored: pd.DataFrame) -> str:
     return md_table(["分数", "题数", "占比"], rows)
 
 
-def cross_model_score_table(scored: pd.DataFrame) -> str:
-    """按 Excel 实际评分数据计算待测模型与参考模型的横向对比表。
+REP_SERIES_ROWS = [
+    ["amuL20（FP16tp2x2 rep1）", 161, 4, 7, 51, 99, "93.2%", "61.5%"],
+    ["amuL20（FP16tp2x2 rep2）", 161, 1, 15, 51, 94, "90.1%", "58.4%"],
+    ["amuL20（FP16tp2x2 rep3）", 161, 0, 14, 50, 97, "91.3%", "60.2%"],
+    ["amuL20（FP16tp2x2 rep4）", 161, 4, 11, 48, 98, "90.7%", "60.9%"],
+    ["amuL20（FP16tp2x2 rep5）", 161, 3, 11, 50, 97, "91.3%", "60.2%"],
+    ["amuL20（FP16tp2x2 rep6）", 161, 2, 13, 53, 93, "90.7%", "57.8%"],
+    ["amuL20（FP16tp2x2 rep7）", 161, 4, 13, 48, 96, "89.4%", "59.6%"],
+    ["amuL20（FP16tp2x2 rep8）", 161, 3, 12, 50, 96, "90.7%", "59.6%"],
+    ["amuL20（FP16tp2x2 rep9）", 161, 3, 12, 49, 97, "90.7%", "60.2%"],
+]
 
-    待测模型分数取 AI 列，参考模型分数取 AK/AM/AO/AQ/AS 列。
-    某个模型的评分列不存在或全为空时，该行不出现在表中。
+
+def cross_model_score_table(
+    scored: pd.DataFrame,
+    target_scored: pd.DataFrame | None = None,
+    target_label: str = "本次待测模型",
+    include_rep_series: bool = False,
+) -> str:
+    """六模型横向基准 + 历史 amu 版本 + amuL20 各版本评分，同一张表。
+
+    本次报告对应的那一行加粗；若 target_label 不在已登记版本中，
+    则按当前 Excel 实时计算并追加一行。
     """
-    specs = [{"name": TARGET_MODEL_LABEL, "score_cols": TARGET_SCORE_COLS}] + MODEL_SPECS
-    rows = []
-    for spec in specs:
-        score_col = first_existing_col(scored, spec["score_cols"])
-        if not score_col:
-            continue
-        scores = score_series(scored, score_col).dropna().astype(int)
-        total = len(scores)
-        if total == 0:
-            continue
-        counts = {score: int((scores == score).sum()) for score in SCORE_LABELS}
-        pass_count = counts[2] + counts[3]
+    rows = [
+        ["M0(小度)", 161, 2, 4, 47, 108, "96.3%", "67.1%"],
+        ["M1(ernie)", 161, 6, 5, 23, 127, "93.2%", "78.9%"],
+        ["M2(doubao)", 161, 2, 6, 42, 111, "95.0%", "68.9%"],
+        ["M3(qwen)", 161, 4, 7, 24, 126, "93.2%", "78.3%"],
+        ["M4(claude)", 161, 3, 7, 21, 130, "93.8%", "80.7%"],
+        ["M5(gemini)", 161, 1, 5, 32, 123, "96.3%", "76.4%"],
+        # 历史待测版本评测结果，均为同一份 161 题高置信集
+        ["amu0094", 161, 3, 6, 4, 148, "94.4%", "91.9%"],
+        ["amu0097", 161, 4, 4, 4, 149, "95.0%", "92.5%"],
+    ]
+    latest = [
+        ["amuL20（FP16tp2）", 161, 6, 15, 47, 93, "87.0%", "57.8%"],
+        ["amuL20（FP16tp4dflash）", 161, 4, 12, 52, 93, "90.1%", "57.8%"],
+    ]
+    if include_rep_series:
+        latest = latest + REP_SERIES_ROWS
+    known = {row[0] for row in latest}
+    for row in latest:
+        if row[0] == target_label:
+            rows.append([f"**{row[0]}**", *row[1:6], f"**{row[6]}**", f"**{row[7]}**"])
+        else:
+            rows.append(row)
+    if target_scored is not None and len(target_scored) and target_label not in known:
+        counts = summarize_score_distribution(target_scored)
+        total = len(target_scored)
         rows.append([
-            spec["name"], total,
-            counts[0], counts[1], counts[2], counts[3],
-            pct(pass_count, total), pct(counts[3], total),
+            f"**{target_label}**", total, counts[0], counts[1], counts[2], counts[3],
+            f"**{pct(counts[2] + counts[3], total)}**", f"**{pct(counts[3], total)}**",
         ])
-    if not rows:
-        return "当前 Excel 尚未写入任何有效评分列，无法生成横向评分表。"
     return md_table(["模型", "总有效", "0分", "1分", "2分", "3分", "≥2分率", "3分率"], rows)
 
 
 def cross_model_low_score_table(scored: pd.DataFrame, max_cases: int = 20) -> str:
     rows = []
-    specs = [{"name": TARGET_MODEL_LABEL, "score_cols": TARGET_SCORE_COLS, "reason_cols": ["judge_reason"]}] + MODEL_SPECS
+    specs = [{"name": "M0(小度)", "score_cols": XIAODU_SCORE_COLS, "reason_cols": ["judge_reason"]}] + MODEL_SPECS
     path_col = "题目路径" if "题目路径" in scored.columns else "图片路径" if "图片路径" in scored.columns else None
     for spec in specs:
         score_col = first_existing_col(scored, spec["score_cols"])
@@ -377,7 +368,8 @@ def cross_model_low_score_table(scored: pd.DataFrame, max_cases: int = 20) -> st
     return md_table(["模型", "Excel行", "学段", "学科", "题型", "分数", "题目路径", "评分原因"], rows)
 
 
-def low_score_cases(scored: pd.DataFrame, max_cases: int = 12) -> str:
+def low_score_cases(scored: pd.DataFrame) -> str:
+    """列出全部 0/1 分低分题，不做条数截断，便于逐条复盘。"""
     low = scored[scored["_score"] <= 1].copy()
     if low.empty:
         return "未发现 0/1 分低分题。"
@@ -385,7 +377,7 @@ def low_score_cases(scored: pd.DataFrame, max_cases: int = 12) -> str:
     reason_col = "judge_reason" if "judge_reason" in low.columns else None
     output_col = "model_output" if "model_output" in low.columns else None
     rows = []
-    for idx, row in low.head(max_cases).iterrows():
+    for idx, row in low.iterrows():
         rows.append([
             idx + 2,
             row.get("学段", ""), row.get("学科", ""), row.get("题型", ""), int(row["_score"]),
@@ -417,7 +409,21 @@ def generate_conclusions(df: pd.DataFrame, scored: pd.DataFrame) -> list[str]:
         if group_stats:
             best = sorted(group_stats, key=lambda x: (-x[0], -x[1], x[2]))[0]
             weak = sorted(group_stats, key=lambda x: (x[0], -x[1], x[2]))[0]
-            conclusions.append(f"分学段学科看，表现最好的是 **{best[2]}**（2+分率 {pct(best[0], 1)}，样本 {best[1]} 道）；当前短板是 **{weak[2]}**（2+分率 {pct(weak[0], 1)}，样本 {weak[1]} 道）。")
+            if len(group_stats) == 1:
+                only = group_stats[0]
+                conclusions.append(
+                    f"本次仅覆盖 **{only[2]}** 一个学段学科（2+分率 {pct(only[0], 1)}，样本 {only[1]} 道），样本不足以比较强弱项。"
+                )
+            elif weak[0] >= 1.0:
+                conclusions.append(
+                    f"分学段学科看，各学段学科 2+分率均为 100.0%，无明显短板（覆盖 {len(group_stats)} 个学段学科）。"
+                )
+            elif best[0] == weak[0]:
+                conclusions.append(
+                    f"分学段学科看，各学段学科 2+分率持平（均为 {pct(best[0], 1)}，覆盖 {len(group_stats)} 个学段学科），无明显强弱差异。"
+                )
+            else:
+                conclusions.append(f"分学段学科看，表现最好的是 **{best[2]}**（2+分率 {pct(best[0], 1)}，样本 {best[1]} 道）；当前短板是 **{weak[2]}**（2+分率 {pct(weak[0], 1)}，样本 {weak[1]} 道）。")
     if pass_rate >= 0.95:
         conclusions.append("整体达到较高可用水平，后续优化重点建议放在低分题归因、输出格式稳定性和难题解析完整性上。")
     elif pass_rate >= 0.85:
@@ -427,12 +433,19 @@ def generate_conclusions(df: pd.DataFrame, scored: pd.DataFrame) -> list[str]:
     return conclusions
 
 
-def build_report(df: pd.DataFrame, source_path: Path, title: str, cross_model_df: pd.DataFrame | None = None) -> str:
-    score_col = first_existing_col(df, TARGET_SCORE_COLS) or "score_0_3"
+def build_report(
+    df: pd.DataFrame,
+    source_path: Path,
+    title: str,
+    xiaodu_df: pd.DataFrame | None = None,
+    target_label: str = "本次待测模型",
+    include_rep_series: bool = False,
+) -> str:
+    score_col = first_existing_col(df, XIAODU_SCORE_COLS) or "score_0_3"
     scored = valid_scored_df(df, score_col)
-    cross_source = cross_model_df if cross_model_df is not None else df
-    cross_score_col = first_existing_col(cross_source, TARGET_SCORE_COLS) or "score_0_3"
-    cross_scored = valid_scored_df(cross_source, cross_score_col)
+    xiaodu_source = xiaodu_df if xiaodu_df is not None else df
+    xiaodu_score_col = first_existing_col(xiaodu_source, XIAODU_SCORE_COLS) or "score_0_3"
+    xiaodu_scored = valid_scored_df(xiaodu_source, xiaodu_score_col)
     conclusions = generate_conclusions(df, scored)
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -490,9 +503,8 @@ def build_report(df: pd.DataFrame, source_path: Path, title: str, cross_model_df
         low_score_cases(scored),
         "",
         "# 三、解题模型横向评分",
-        cross_model_score_table(cross_scored),
+        cross_model_score_table(xiaodu_scored, scored, target_label, include_rep_series),
         "",
-
     ])
     return "\n".join(parts)
 
@@ -501,8 +513,15 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="根据评测 Excel 自动生成 Markdown 报告")
     parser.add_argument("xlsx", nargs="?", default=None, help="输入 Excel 路径，默认 <work-dir>/evaluation.xlsx")
     parser.add_argument("--output", "-o", help="输出 Markdown 路径，默认 reports/report_<timestamp>.md")
-    parser.add_argument("--title", default="解题模型评测报告", help="报告标题")
-    parser.add_argument("--cross-model-xlsx", dest="cross_model_xlsx", help="横向评分来源 Excel；未指定时使用主输入 Excel")
+    parser.add_argument("--title", default="小度解题模型评测报告", help="报告标题")
+    parser.add_argument(
+        "--target-label", default="本次待测模型", help="横向表中本次待测模型的行名"
+    )
+    parser.add_argument(
+        "--rep-series", action="store_true",
+        help="追加 amuL20（FP16tp2x2 0904）rep1-rep9 九次重复评测横向对比章节",
+    )
+    parser.add_argument("--xiaodu-xlsx", help="小度横向评分来源 Excel；未指定时使用主输入 Excel")
     parser.add_argument("--work-dir", default=os.environ.get("AUTO_EVAL_WORK_DIR"), help="运行产物目录；未指定 xlsx/output 时用于默认路径")
     return parser.parse_args()
 
@@ -526,16 +545,17 @@ def main() -> None:
     if missing:
         raise SystemExit(f"Excel 缺少必要列：{', '.join(missing)}")
 
-    cross_model_df = None
-    if args.cross_model_xlsx:
-        cross_path = Path(args.cross_model_xlsx).expanduser()
-        if not cross_path.is_absolute():
-            cross_path = work_dir / cross_path
-        if not cross_path.exists():
-            raise SystemExit(f"横向评分 Excel 不存在：{cross_path}")
-        cross_model_df = pd.read_excel(cross_path)
+    xiaodu_df = None
+    if args.xiaodu_xlsx:
+        xiaodu_path = Path(args.xiaodu_xlsx).expanduser()
+        if not xiaodu_path.is_absolute():
+            xiaodu_path = work_dir / xiaodu_path
+        if not xiaodu_path.exists():
+            raise SystemExit(f"小度横向评分 Excel 不存在：{xiaodu_path}")
+        xiaodu_df = pd.read_excel(xiaodu_path)
 
-    report = build_report(df, xlsx_path, args.title, cross_model_df=cross_model_df)
+    report = build_report(df, xlsx_path, args.title, xiaodu_df=xiaodu_df,
+                          target_label=args.target_label, include_rep_series=args.rep_series)
 
     if args.output:
         output_path = Path(args.output).expanduser()

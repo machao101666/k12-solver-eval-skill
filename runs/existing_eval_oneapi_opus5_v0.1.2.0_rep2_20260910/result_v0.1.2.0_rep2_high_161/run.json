@@ -1,0 +1,20 @@
+{
+  "mode": "existing_results_evaluation",
+  "created_at": "2026-09-11T13:42:52+08:00",
+  "source_xlsx": "/Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/0730vis解题评测/evaluation.xlsx",
+  "source_images_dir": "/Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/0730vis解题评测/evaluation",
+  "source_results_jsonl": "/Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/auto-evaluation-skill（amu评测）/runs/inputs/result_v0.1.2.0_rep2.jsonl",
+  "high_count": 161,
+  "ignored_jsonl_records": 14,
+  "evaluation": "evaluation.xlsx",
+  "filtered_results_jsonl": "result_v0.1.2.0_rep2_high_161.jsonl",
+  "report": "report.md",
+  "status": "success",
+  "updated_at": "2026-09-11T13:51:11+08:00",
+  "score_distribution": {
+    "0": 1,
+    "1": 16,
+    "2": 61,
+    "3": 83
+  }
+}

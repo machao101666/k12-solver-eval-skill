@@ -1,0 +1,33 @@
+======================================================================
+流水线启动 | run_id=20260907_194808 | 目录=/Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/auto-evaluation-skill（amu评测）/runs/trial_rep1_first5/rep1_first5_high_5
+======================================================================
+
+──────────────────────────────────────────────────
+▶ [07] 阶段开始: score — 专业评分裁判（C模块）
+──────────────────────────────────────────────────
+  [19:48:08] [INFO] 输入文件: /Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/auto-evaluation-skill（amu评测）/runs/trial_rep1_first5/rep1_first5_high_5/evaluation.xlsx
+  [19:48:08] [INFO] 共 5 行数据，开始处理（仅confidence=high，评分请求级并发=5）...
+  [19:48:08] [INFO] 已生成评分请求任务 5 个，开始请求级并发执行...
+  [19:48:27] [INFO] [行2] target评分完成: 3，耗时 19.08s
+  [19:48:29] [INFO] [行6] target评分完成: 2，耗时 20.75s
+  [19:48:29] [INFO] [行3] target评分完成: 3，耗时 20.88s
+  [19:48:33] [INFO] [行5] target评分完成: 3，耗时 24.58s
+  [19:48:34] [INFO] [行4] target评分完成: 3，耗时 25.75s
+  [19:48:34] [INFO] [行2] 汇总: success; target=3(19.08s)
+  [19:48:34] [INFO] [行3] 汇总: success; target=3(20.88s)
+  [19:48:34] [INFO] [行4] 汇总: success; target=3(25.75s)
+  [19:48:34] [INFO] [行5] 汇总: success; target=3(24.58s)
+  [19:48:34] [INFO] [行6] 汇总: success; target=2(20.75s)
+  [19:48:34] [INFO] 输出文件: /Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/auto-evaluation-skill（amu评测）/runs/trial_rep1_first5/rep1_first5_high_5/evaluation.xlsx
+  [19:48:34] [INFO] 全部处理完成: processed=5, skipped=0, failed=0, xiaodu_scored=5, score_tasks=5, score_task_failed=0；单个评分请求失败已写入对应 reason 列，不影响流水线继续
+──────────────────────────────────────────────────
+✔ 阶段结束: score | 状态=success | 耗时=25.8s
+   摘要: 完成
+──────────────────────────────────────────────────
+
+======================================================================
+流水线结束
+  阶段总计: 1
+  成功: 1  失败: 0  跳过: 0
+  日志目录: /Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/auto-evaluation-skill（amu评测）/runs/trial_rep1_first5/rep1_first5_high_5/logs/run_20260907_194808
+======================================================================

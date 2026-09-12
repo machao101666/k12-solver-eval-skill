@@ -1,0 +1,36 @@
+{
+  "run_id": "20260911_134252",
+  "base_dir": "/Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/auto-evaluation-skill（amu评测）/runs/existing_eval_oneapi_opus5_v0.1.2.0_rep2_20260910/result_v0.1.2.0_rep2_high_161",
+  "started_at": "2026-09-11T13:42:52.724976",
+  "stages": {
+    "07_score": {
+      "name": "score",
+      "desc": "专业评分裁判（C模块）",
+      "order": "07",
+      "status": "success",
+      "started_at": "2026-09-11T13:42:52.814174",
+      "progress": {
+        "current": 0,
+        "total": 0
+      },
+      "files_in": [
+        "/Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/auto-evaluation-skill（amu评测）/runs/existing_eval_oneapi_opus5_v0.1.2.0_rep2_20260910/result_v0.1.2.0_rep2_high_161/evaluation.xlsx"
+      ],
+      "files_out": [
+        "/Users/machao/Desktop/拍照解题/【评测&自动化】拍照解题/auto-evaluation-skill（amu评测）/runs/existing_eval_oneapi_opus5_v0.1.2.0_rep2_20260910/result_v0.1.2.0_rep2_high_161/evaluation.xlsx"
+      ],
+      "api_calls": [],
+      "errors": [],
+      "rows": 0,
+      "ended_at": "2026-09-11T13:51:04.885458"
+    }
+  },
+  "summary": {
+    "total": 1,
+    "success": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "updated_at": "2026-09-11T13:51:04.886308",
+  "ended_at": "2026-09-11T13:51:04.886305"
+}

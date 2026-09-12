@@ -13,7 +13,10 @@ import signal
 import openpyxl
 
 from logger import get_logger
-from config import cfg, secret, prompt
+import config
+
+# 千帆接口地址（保留默认，可用环境变量覆盖）；Token 从环境变量 / .env 读取
+QIANFAN_API_URL = config.get('QIANFAN_API_URL', 'https://qianfan.baidubce.com/v2/chat/completions')
 
 
 class TimeoutException(Exception):
@@ -36,35 +39,26 @@ def print_progress(msg):
     sys.stdout.flush()
 
 
-def check_question(image_path: str, timeout=None, max_retries=None) -> str:
-    """调用视觉理解模型判定图片有效性与分类。
-
-    接入点、模型、提示词、超时与重试次数均来自 config.yaml 的
-    ``providers.qianfan`` / ``models.classify`` / ``prompts.files.clean_classify``。
+def check_question(image_path: str, timeout: int = 200, max_retries: int = 1) -> str:
+    """
+    调用千帆视觉理解API检查图片，首次调用 + 最多 1 次重试，每次限时 200 秒。
 
     Args:
         image_path: 图片路径
-        timeout: 单次请求超时（秒），None 表示用配置值
-        max_retries: 重试次数，None 表示用配置值
+        timeout: 超时时间（秒），默认200秒
 
     Returns:
         API返回的原始content内容
     """
-    provider_name = cfg('models.classify.provider', 'qianfan')
-    url = cfg(f'providers.{provider_name}.base_url')
-    api_key = secret(f'providers.{provider_name}.api_key')
-    if timeout is None:
-        timeout = int(cfg('models.classify.timeout', 200))
-    if max_retries is None:
-        max_retries = int(cfg('models.classify.max_retries', 1))
+    url = QIANFAN_API_URL
 
     base64_image = image_to_base64(image_path)
 
     payload = {
-        "model": cfg('models.classify.model'),
+        "model": "ernie-5.0-thinking-latest",
         "stream": False,
-        "temperature": cfg('models.classify.temperature', 0.2),
-        "enable_thinking": cfg('models.classify.enable_thinking', False),
+        "temperature": 0.2,
+        "enable_thinking": False,
         "messages": [
             {
                 "role": "user",
@@ -77,7 +71,117 @@ def check_question(image_path: str, timeout=None, max_retries=None) -> str:
                     },
                     {
                         "type": "text",
-                        "text": prompt("clean_classify")           }
+                        "text": """# 任务说明
+你是专业试题视觉审核与分类专家，依据图片内容执行判定、分类与原因说明，严格遵守所有规则、输出格式及示例范式，禁止自由发挥、自创内容。
+
+# 一、有效性判定总规则
+同时满足全部条件，有效性判定输出【1】（有效完整单题）；任意触发以下任一情况，有效性判定输出【2】（无效内容）：
+1. 题目数量：图片内以**一道独立大题**为主体，大题附带多个子小题（如数学大题含多小问、阅读理解大题含多道小题），统一视为1道完整试题，判定为有效；
+   图片包含**两道及以上独立大题**、多组互不归属的试题、题目片段拼接 → 判定无效。
+2. 内容完整性：题目无裁切、无关键文字缺失、内容完整 → 残缺则无效
+3. 图像质量：画面无严重模糊、反光、遮挡、扭曲，文字图形可正常识别 → 画质异常则无效
+4. 配图校验：题干出现"如图、见下图、附图"等字样，但图片内无对应配图 → 无效
+5. 学科限制：试题仅限数学、语文、英语；物理、化学、生物、道法等其他学科 → 无效
+
+补充规则：题目附带手写答案、印刷答案、解题步骤、草稿笔迹，不影响有效性判定。
+
+# 二、输出规则
+1. 有效性判定：有效输出数字 1，无效输出数字 2
+2. 判定为 1（有效）：依次填写 学段、学科、题型，严格使用指定名称
+3. 判定为 2（无效）：学段、学科、题型 统一填写「无」，并在最后用**一句话简短说明无效原因**
+
+# 三、分类可选值（严格照搬，不可修改、简写、新增）
+## 学段（三选一）
+小学、初中、高中
+## 学科（三选一）
+数学、语文、英语
+## 题型清单
+### 数学
+选择题、填空题、计算题（口算）、计算题（竖式计算）、计算题（脱式计算）、计算题（解方程）、普通应用大题（无图）、普通应用大题（带图）、证明题、解析几何题
+### 语文
+选择题、拼音打勾题、连线题、填空题、阅读理解类
+### 英语
+单项选择、完形填空、阅读理解（选择型）、匹配题/连线题、阅读理解（简答）、书面表达（作文）、填空题
+
+# 四、题型判定口径
+1. 数学
+纯数字算式 → 计算题（口算）；竖式格式运算 → 计算题（竖式计算）；递等式运算 → 计算题（脱式计算）；含未知数求解 → 计算题（解方程）；文字应用题无图 → 普通应用大题（无图）；文字应用题带图表 → 普通应用大题（带图）；几何求证（必须为解答题题型） → 证明题；坐标/函数综合大题（必须为解答题题型） → 解析几何题；一道大题包含多个小问，仍按该大题整体归类题型。
+2. 语文
+拼音选读音/字形 → 拼音打勾题；两两内容配对作答 → 连线题；长文加问答（含多道小题） → 阅读理解类。
+3. 英语
+四选一客观题 → 单项选择；短文挖空选择题 → 完形填空；阅读+选择题作答（含多小题） → 阅读理解（选择型）；两两配对作答 → 匹配题/连线题；阅读+手写作答（含多小题） → 阅读理解（简答）；短文写作类 → 书面表达（作文）。
+
+# 五、Few-shot 示例（参考格式与判断逻辑，严格模仿）
+## 示例1（有效：单道小学数学竖式计算题）
+有效性判定：1
+学段：小学
+学科：数学
+题型：计算题（竖式计算）
+无效原因：无
+
+## 示例2（有效：数学大题包含多个小问，视为一道完整题目）
+有效性判定：1
+学段：初中
+学科：数学
+题型：普通应用大题（无图）
+无效原因：无
+
+## 示例3（有效：英语阅读理解大题附带多道小题）
+有效性判定：1
+学段：高中
+学科：英语
+题型：阅读理解（选择型）
+无效原因：无
+
+## 示例4（无效：图片包含两道相互独立的大题）
+有效性判定：2
+学段：无
+学科：无
+题型：无
+无效原因：图片内存在两道及以上独立大题
+
+## 示例5（无效：题干写有如图，但无对应配图）
+有效性判定：2
+学段：无
+学科：无
+题型：无
+无效原因：题干提及如图，图片缺少对应配图
+
+## 示例6（无效：属于物理学科，非语数英）
+有效性判定：2
+学段：无
+学科：无
+题型：无
+无效原因：试题为物理学科，超出指定学科范围
+
+## 示例7（无效：画面严重模糊，无法识别内容）
+有效性判定：2
+学段：无
+学科：无
+题型：无
+无效原因：图片画质模糊，无法识别题目内容
+
+## 示例8（无效：题目被裁切，内容不完整）
+有效性判定：2
+学段：无
+学科：无
+题型：无
+无效原因：题目画面裁切，内容残缺不全
+
+## 示例9（有效：语文阅读理解含多道小题）
+有效性判定：1
+学段：小学
+学科：语文
+题型：阅读理解类
+无效原因：无
+
+# 六、固定输出格式（严格按顺序分行，不增删空行、符号）
+有效性判定：
+学段：
+学科：
+题型：
+无效原因："""
+                    }
                 ]
             }
         ]
@@ -85,7 +189,7 @@ def check_question(image_path: str, timeout=None, max_retries=None) -> str:
 
     headers = {
         'Content-Type': 'application/json',
-        'Authorization': api_key if api_key.startswith('Bearer ') else f'Bearer {api_key}',
+        'Authorization': f"Bearer {config.require('QIANFAN_API_TOKEN', '千帆有效性判定/分类')}"
     }
 
     last_error = ''

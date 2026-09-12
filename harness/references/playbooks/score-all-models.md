@@ -2,7 +2,7 @@
 
 ## 目标
 
-Stage 7 除待测模型外，还对 Stage 3 的五个参考模型输出进行横向评分。
+Stage 7 除小度外，还对 Stage 3 的五个参考模型输出进行横向评分。
 
 ## 输入列
 
@@ -22,7 +22,6 @@ Stage 7 除待测模型外，还对 Stage 3 的五个参考模型输出进行横
 
 ## 注意
 
-- 待测模型评分的提示词和输入输出逻辑不变，见 `prompts/stage7_score_target.md`。
-- 五模型评分使用独立评分提示词 `prompts/stage7_score_reference.md`。
-- 输出列号在 `config.yaml` 的 `excel.reference_score_columns` 中定义。
-- 评分只对 `confidence=high` 行执行，置信度口径由 `evaluation.only_confidence` 配置。
+- 小度评分提示词和输入输出逻辑不变。
+- 五模型评分使用用户提供的独立评分提示词。
+- 评分只对 `confidence=high` 行执行。

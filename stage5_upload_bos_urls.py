@@ -15,18 +15,21 @@ from urllib.parse import quote
 from openpyxl import load_workbook
 
 from logger import get_logger
-from config import cfg, column, secret, require_secrets
+import config
 
-# ============ 配置区：全部来自 config.yaml / .env，见 config.py ============
-ENDPOINT = cfg('providers.bos.endpoint')
-BUCKET = cfg('providers.bos.bucket')
-BOS_ROOT_NAME = cfg('providers.bos.local_root_name', 'image_ocr_clean')  # 本地根目录名，上传时替换成批次时间
+# ============ 配置区 ============
+# BOS 访问密钥：从环境变量 / .env 读取，源码不含真实密钥
+AK = config.require("BOS_ACCESS_KEY", "百度 BOS 上传")
+SK = config.require("BOS_SECRET_KEY", "百度 BOS 上传")
+ENDPOINT = config.get("BOS_ENDPOINT", "bj.bcebos.com")   # 北京区域，按需改为 gz / su
+BUCKET = config.get("BOS_BUCKET", "machao")
+BOS_ROOT_NAME = "image_ocr_clean"  # 本地根目录名，上传时替换成批次时间
 WORK_DIR = os.environ.get("AUTO_EVAL_WORK_DIR") or os.path.dirname(os.path.abspath(__file__))
-XLSX_PATH = os.path.join(WORK_DIR, cfg('paths.excel_file', 'evaluation.xlsx'))
-COL_IMAGE_PATH = column('image_path')   # B列
-COL_CONFIDENCE = column('confidence')   # Z列
-COL_AE_URL = column('image_url')        # AE列
-# =========================================================================
+XLSX_PATH = os.path.join(WORK_DIR, "evaluation.xlsx")
+COL_IMAGE_PATH = 2   # B列
+COL_CONFIDENCE = 26  # Z列
+COL_AE_URL = 31      # AE列
+# ================================
 
 
 class UploadError(RuntimeError):
@@ -34,12 +37,6 @@ class UploadError(RuntimeError):
 
 
 def get_bos_client():
-    require_secrets(
-        'providers.bos.endpoint',
-        'providers.bos.bucket',
-        'providers.bos.access_key_id',
-        'providers.bos.secret_access_key',
-    )
     try:
         from baidubce.bce_client_configuration import BceClientConfiguration
         from baidubce.auth.bce_credentials import BceCredentials
@@ -51,10 +48,7 @@ def get_bos_client():
         ) from exc
 
     config = BceClientConfiguration(
-        credentials=BceCredentials(
-            secret('providers.bos.access_key_id'),
-            secret('providers.bos.secret_access_key'),
-        ),
+        credentials=BceCredentials(AK, SK),
         endpoint=ENDPOINT,
     )
     return BosClient(config)

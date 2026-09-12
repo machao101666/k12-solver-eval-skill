@@ -36,7 +36,7 @@
 
 ## 场景四：单阶段运行
 
-用户表达：只切题、只清洗分类、只上传 BOS、只跑待测模型解题、只评分、只生成报告。
+用户表达：只切题、只清洗分类、只上传 BOS、只跑小度、只评分、只生成报告。
 
 需要信息：run 目录和阶段号；如果是 Stage 1 还需要 CSV。
 
@@ -62,11 +62,11 @@
 
 输出给用户：错误码含义、复现行、下一步处理。
 
-## 场景七：待测模型诊断
+## 场景七：小度诊断
 
-用户表达：待测模型没输出、AE/AF/AG 列异常、URL 不可访问、返回内容为空、耗时问题。
+用户表达：小度没输出、AE/AF/AG 列异常、URL 不可访问、SSE 空、耗时问题。
 
-默认动作：使用 `harness/references/playbooks/diagnose-target-model-error.md`。先确认 `providers.target_model.api_style` 和 `input_mode`，再检查 confidence、AE URL（`input_mode: url` 时）或 B 列本地图片（`input_mode: image` 时）、AF 输出、AG 耗时和 Stage 6 日志。
+默认动作：使用 `harness/references/playbooks/diagnose-xiaodu-error.md`。检查 confidence、AE URL、AF 输出、AG 耗时和 Stage 6 日志。
 
 输出给用户：是否为输入缺失、接口失败、超时或非 high 行跳过。
 
@@ -76,7 +76,7 @@
 
 默认动作：确认 Stage 7 已写 AK-AT，再用 Stage 8 报告或直接读 Excel 汇总。
 
-输出给用户：待测模型评分与五参考模型评分分开说明，不混用口径。
+输出给用户：小度评分与五参考模型评分分开说明，不混用口径。
 
 ## 场景九：历史 run 查询
 
@@ -89,6 +89,6 @@
 ## 暂不支持或需降级
 
 - 没有 CSV/Excel/图片输入时，不能凭空执行评测。
-- API 密钥无效、配额不足、BOS 权限不可用时，只能定位问题，不能绕过接口；先用 `python3 config.py` 自检配置。
-- 评分规则、提示词、入集口径变更必须由用户明确确认；确认后改 `config.yaml` 或 `prompts/`，不改 stage 脚本。
-- 非 `confidence=high` 的样本默认不进入待测模型解题和评分，该口径由 `config.yaml` 的 `evaluation.only_confidence` 配置。
+- API 密钥无效、配额不足、BOS 权限不可用时，只能定位问题，不能绕过接口。
+- 评分规则、提示词、入集口径变更必须由用户明确确认。
+- 非 `confidence=high` 的样本默认不进入小度解题和评分。

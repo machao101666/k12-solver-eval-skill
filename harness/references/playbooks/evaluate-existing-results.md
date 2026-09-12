@@ -63,13 +63,11 @@ python3 evaluate_existing_results.py \
 ## 评分行为
 
 - 独立模式调用 Stage 7 的 `targets=target`，每题只产生一个待测评分请求。
-- `--concurrency` 默认 8，`--invalid-retries` 默认 2；Stage 7 自身未显式传参时取 `config.yaml` 的 `runtime.score_concurrency` 和 `evaluation.invalid_retries`。
-- 只处理 `confidence=high`，置信度口径由 `config.yaml` 的 `evaluation.only_confidence` 配置。
+- 默认并发 8。
 - API 网络错误沿用单次调用重试策略。
 - 返回缺少合法 `score_0_3` 或 `judge_reason` 时，按 `--invalid-retries` 额外重试。
 - 一个响应含多个评分 JSON 时，采用最后一个完整 JSON，适配裁判“复核更正”的返回。
 - 最终任一 high 行不是 0-3 整数或理由为空，整轮停止，不生成误导性报告。
-- 横向评分需要引用另一份 Excel 时，使用 `--cross-model-xlsx <xlsx>`。
 
 ## 输出检查
 

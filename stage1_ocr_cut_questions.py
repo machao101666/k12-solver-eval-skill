@@ -22,14 +22,18 @@ from PIL import Image
 from io import BytesIO
 
 from logger import get_logger
-from config import cfg, secret
+import config
 
 # ============================================
-# 配置：全部来自 config.yaml / .env，见 config.py
+# 凭证配置：从环境变量 / .env 读取，源码不含真实密钥
 # ============================================
-AUTH_URL = cfg('providers.baidu_ocr.token_url')
-PAPER_CUT_VLM_CREATE_URL = cfg('providers.baidu_ocr.create_task_url')
-PAPER_CUT_VLM_RESULT_URL = cfg('providers.baidu_ocr.get_result_url')
+# 百度 OCR 应用的 API Key / Secret Key（client_credentials 换取 access_token）
+API_KEY = config.get('BAIDU_OCR_API_KEY', '')
+SECRET_KEY = config.get('BAIDU_OCR_SECRET_KEY', '')
+
+# API 地址保留默认值，可用同名环境变量覆盖
+PAPER_CUT_VLM_CREATE_URL = config.get('BAIDU_OCR_CREATE_URL', 'https://aip.baidubce.com/rest/2.0/ocr/v1/paper_cut_edu_vlm/create_task')
+PAPER_CUT_VLM_RESULT_URL = config.get('BAIDU_OCR_RESULT_URL', 'https://aip.baidubce.com/rest/2.0/ocr/v1/paper_cut_edu_vlm/get_result')
 
 # Access Token 缓存
 access_token = None
@@ -73,20 +77,21 @@ def download_image(url, folder="image"):
 
 
 def get_access_token():
-    """获取百度 Access Token，带进程内缓存。"""
+    """获取百度Access Token（从 app.py 复用）"""
     global access_token, token_expires_at
 
     if access_token and time.time() < token_expires_at:
         return access_token
 
+    auth_url = 'https://aip.baidubce.com/oauth/2.0/token'
     params = {
         'grant_type': 'client_credentials',
-        'client_id': secret('providers.baidu_ocr.api_key'),
-        'client_secret': secret('providers.baidu_ocr.secret_key'),
+        'client_id': config.require('BAIDU_OCR_API_KEY', '百度 OCR 切题'),
+        'client_secret': config.require('BAIDU_OCR_SECRET_KEY', '百度 OCR 切题')
     }
 
     try:
-        response = requests.post(AUTH_URL, params=params)
+        response = requests.post(auth_url, params=params)
         result = response.json()
 
         if 'access_token' in result:
@@ -126,7 +131,7 @@ def recognize_paper_cut_vlm_by_image(image_path):
         }, ensure_ascii=False)
 
         # 创建任务（带QPS超限重试）
-        max_create_retries = int(cfg('ocr.create_max_retries', 3))
+        max_create_retries = 3
         for create_attempt in range(max_create_retries):
             response = requests.post(create_url, data=data, headers=headers, timeout=30)
             response.raise_for_status()
@@ -163,9 +168,9 @@ def recognize_paper_cut_vlm_by_image(image_path):
         result_url = f"{PAPER_CUT_VLM_RESULT_URL}?access_token={token}"
         result_headers = {'Content-Type': 'application/x-www-form-urlencoded'}
 
-        query_attempts = int(cfg('ocr.query_attempts', 3))
-        max_retries = int(cfg('ocr.poll_max_retries', 30))
-        retry_interval = int(cfg('ocr.poll_interval', 3))
+        query_attempts = 3
+        max_retries = 30
+        retry_interval = 3
 
         for query_attempt in range(1, query_attempts + 1):
             # 文档建议：提交请求后5～10秒开始轮询

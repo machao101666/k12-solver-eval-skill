@@ -50,8 +50,8 @@ STAGES = {
         "command": lambda ctx: [sys.executable, str(BASE_DIR / "stage5_upload_bos_urls.py"), str(ctx["image_ocr_clean_path"]), "--write-excel", "--work-dir", str(ctx["run_dir"]), "--xlsx", str(ctx["evaluation_path"])],
     },
     6: {
-        "name": "待测模型解题",
-        "command": lambda ctx: [sys.executable, str(BASE_DIR / "stage6_target_solve.py"), "--work-dir", str(ctx["run_dir"])],
+        "name": "小度解题",
+        "command": lambda ctx: [sys.executable, str(BASE_DIR / "stage6_xiaodu_solve.py"), "--work-dir", str(ctx["run_dir"])],
     },
     7: {
         "name": "评分裁判",
@@ -380,7 +380,7 @@ def assess_required_outputs(run_dir: Path, stage_no: int) -> tuple[str, str]:
     xlsx_path = run_dir / "evaluation.xlsx"
     if stage_no == 6:
         if excel_has_value(xlsx_path, 32, reject_error=False):
-            return "success", "Stage 6 已写入 AF 待测模型输出或错误记录，单行失败不阻断流水线"
+            return "success", "Stage 6 已写入 AF 小度输出或错误记录，单行失败不阻断流水线"
         return "success", "Stage 6 未产生 AF 内容；按失败写表、不阻断策略继续后续阶段"
     if stage_no == 7:
         if excel_has_value(xlsx_path, 35, reject_error=False) or excel_has_value(xlsx_path, 36, reject_error=False):
